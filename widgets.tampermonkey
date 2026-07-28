@@ -140,6 +140,7 @@
                     data.downloads = total;
                     data.time = Date.now();
                     GM_setValue(key, data);
+                    insertDownloads(total);
 
                 }
             });
@@ -162,9 +163,9 @@
                     data.created_at = repo.created_at;
                     data.time = Date.now();
                     GM_setValue(key, data);
+                    insertCreatedAt(repo.created_at);
                 }
             });
-            insertAllFromCache();
         }
     }
 
