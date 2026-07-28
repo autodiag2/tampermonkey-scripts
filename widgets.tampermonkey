@@ -1,0 +1,180 @@
+// ==UserScript==
+// @name         GitHub Widgets
+// @namespace    github.com
+// @version      1.0
+// @description  Adds widgets that you love to any repo
+// @match        https://github.com/*/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @connect      api.github.com
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    const CACHE_TIME = 30 * 60 * 1000;
+
+    function format(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+        if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+        return String(n);
+    }
+
+    function repo() {
+        const m = location.pathname.match(/^\/([^\/]+)\/([^\/]+)/);
+        return m ? { owner: m[1], repo: m[2] } : null;
+    }
+
+    function insertWidget(id, svg, text) {
+
+        if (document.getElementById(id))
+            return;
+
+        const social = document.querySelector('#repository-details-container ul');
+        if (!social)
+            return;
+
+        const li = document.createElement("li");
+        li.id = id;
+        li.className = "btn-sm btn BtnGroup-item";
+        li.style.display = "flex";
+
+        li.innerHTML = `
+        <a class="Link--muted d-inline-flex flex-items-center">
+            ${svg}
+            <span>${text}</span>
+        </a>`;
+
+        social.appendChild(li);
+    }
+
+    function formatAge(createdAt) {
+        const created = new Date(createdAt);
+        const now = new Date();
+
+        let years = now.getFullYear() - created.getFullYear();
+        let months = now.getMonth() - created.getMonth();
+
+        if (months < 0) {
+            years--;
+            months += 12;
+        }
+
+        if (years > 0)
+            return `${years}y ${months}m`;
+
+        return `${months}m`;
+    }
+
+    function insertDownloads(total) {
+        insertWidget(
+            "gh-download-counter",
+            `
+                     <svg aria-hidden="true" height="16" width="16" viewBox="0 0 16 16" style="margin-right:4px">
+                          <path d="M8 1a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V1.75A.75.75 0 0 1 8 1Z"/>
+                     </svg>
+                    `,
+            format(total)
+        );
+    }
+    function insertCreatedAt(created_at) {
+        insertWidget(
+                    "gh-age-counter",
+                    `
+                    <svg aria-hidden="true" height="16" width="16" viewBox="0 0 16 16" style="margin-right:4px">
+                        <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm.75 4v4.19l2.53 1.46-.75 1.3L7.25 9V4h1.5Z"/>
+                    </svg>
+                    `,
+                    formatAge(created_at)
+                );
+    }
+    function insertAllFromCache() {
+        const r = repo();
+        if (!r)
+            return false;
+
+        const key = `${r.owner}/${r.repo}`;
+
+        const cached = GM_getValue(key);
+
+        if (cached && Date.now() - cached.time < CACHE_TIME) {
+            insertDownloads(cached.downloads);
+            insertCreatedAt(cached.created_at);
+            return true;
+        }
+        return false;
+    }
+    function loadState(key) {
+        return GM_getValue(key, {});
+    }
+    async function load() {
+
+        const r = repo();
+        if (!r)
+            return;
+
+        const key = `${r.owner}/${r.repo}`;
+
+        if ( ! insertAllFromCache() ) {
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: `https://api.github.com/repos/${r.owner}/${r.repo}/releases`,
+                headers: {
+                    Accept: "application/vnd.github+json"
+                },
+                onload: function (res) {
+
+                    if (res.status !== 200)
+                        return;
+
+                    const releases = JSON.parse(res.responseText);
+
+                    let total = 0;
+
+                    for (const rel of releases)
+                        for (const asset of rel.assets)
+                            total += asset.download_count;
+
+                    let data = loadState(key);
+                    data.downloads = total;
+                    data.time = Date.now();
+                    GM_setValue(key, data);
+
+                }
+            });
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: `https://api.github.com/repos/${r.owner}/${r.repo}`,
+                headers: {
+                    Accept: "application/vnd.github+json"
+                },
+                onload(res) {
+
+                    if (res.status !== 200) {
+                        console.warn("failed to fetch main repo");
+                        return;
+                    }
+
+                    const repo = JSON.parse(res.responseText);
+
+                    let data = loadState(key);
+                    data.created_at = repo.created_at;
+                    data.time = Date.now();
+                    GM_setValue(key, data);
+                }
+            });
+            insertAllFromCache();
+        }
+    }
+
+    const observer = new MutationObserver(load);
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    load();
+
+})();
