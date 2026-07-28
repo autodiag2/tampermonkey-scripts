@@ -7,6 +7,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @connect      api.github.com
 // ==/UserScript==
 
@@ -94,14 +95,18 @@
         if (!r)
             return false;
 
+        const settings = loadSettings();
         const key = `${r.owner}/${r.repo}`;
 
         const cached = GM_getValue(key);
 
         if (cached && Date.now() - cached.time < CACHE_TIME) {
-            insertDownloads(cached.downloads);
-            insertCreatedAt(cached.created_at);
-            insertDownloadsPerWeek(cached.downloads, cached.created_at);
+            if ( settings.downloads )
+                insertDownloads(cached.downloads);
+            if ( settings.repositoryAge )
+                insertCreatedAt(cached.created_at);
+            if ( settings.downloadsWeek )
+                insertDownloadsPerWeek(cached.downloads, cached.created_at);
             return true;
         }
         return false;
@@ -138,61 +143,171 @@
 
         const key = `${r.owner}/${r.repo}`;
 
-        if ( ! insertAllFromCache() ) {
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `https://api.github.com/repos/${r.owner}/${r.repo}/releases`,
-                headers: {
-                    Accept: "application/vnd.github+json"
-                },
-                onload: function (res) {
+        const settings = loadSettings();
 
-                    if (res.status !== 200)
-                        return;
+        if ( ! settings.cacheEnabled || ! insertAllFromCache() ) {
+            if (settings.downloads || settings.downloadsWeek ) {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `https://api.github.com/repos/${r.owner}/${r.repo}/releases`,
+                    headers: {
+                        Accept: "application/vnd.github+json"
+                    },
+                    onload: function (res) {
 
-                    const releases = JSON.parse(res.responseText);
+                        if (res.status !== 200)
+                            return;
 
-                    let total = 0;
+                        const releases = JSON.parse(res.responseText);
 
-                    for (const rel of releases)
-                        for (const asset of rel.assets)
-                            total += asset.download_count;
+                        let total = 0;
 
-                    let data = loadState(key);
-                    data.downloads = total;
-                    data.time = Date.now();
-                    GM_setValue(key, data);
-                    insertDownloads(total);
-                    if (data.created_at)
-                        insertDownloadsPerWeek(total, data.created_at);
+                        for (const rel of releases)
+                            for (const asset of rel.assets)
+                                total += asset.download_count;
 
-                }
-            });
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `https://api.github.com/repos/${r.owner}/${r.repo}`,
-                headers: {
-                    Accept: "application/vnd.github+json"
-                },
-                onload(res) {
+                        let data = loadState(key);
+                        data.downloads = total;
+                        data.time = Date.now();
+                        GM_setValue(key, data);
+                        if (settings.downloads)
+                            insertDownloads(total);
+                        if (settings.downloadsWeek)
+                            if (data.created_at)
+                                insertDownloadsPerWeek(total, data.created_at);
 
-                    if (res.status !== 200) {
-                        console.warn("failed to fetch main repo");
-                        return;
                     }
+                });
+            }
+            if ( settings.downloadsWeek || settings.repositoryAge ) {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `https://api.github.com/repos/${r.owner}/${r.repo}`,
+                    headers: {
+                        Accept: "application/vnd.github+json"
+                    },
+                    onload(res) {
 
-                    const repo = JSON.parse(res.responseText);
+                        if (res.status !== 200) {
+                            console.warn("failed to fetch main repo");
+                            return;
+                        }
 
-                    let data = loadState(key);
-                    data.created_at = repo.created_at;
-                    data.time = Date.now();
-                    GM_setValue(key, data);
-                    insertCreatedAt(repo.created_at);
-                    if (data.downloads != null)
-                        insertDownloadsPerWeek(data.downloads, repo.created_at);
-                }
-            });
+                        const repo = JSON.parse(res.responseText);
+
+                        let data = loadState(key);
+                        data.created_at = repo.created_at;
+                        data.time = Date.now();
+                        GM_setValue(key, data);
+                        if (settings.repositoryAge)
+                            insertCreatedAt(repo.created_at);
+                        if ( settings.downloadsWeek ) 
+                            if (data.downloads != null)
+                                insertDownloadsPerWeek(data.downloads, repo.created_at);
+                    }
+                });
+            }
         }
+    }
+    const SETTINGS_KEY = "settings";
+
+    function loadSettings() {
+        return Object.assign({
+            downloads: true,
+            downloadsWeek: true,
+            repositoryAge: true,
+            cacheEnabled: false
+        }, GM_getValue(SETTINGS_KEY, {}));
+    }
+
+    function saveSettings(settings) {
+        GM_setValue(SETTINGS_KEY, settings);
+    }
+
+    function showSettings() {
+
+        if (document.getElementById("ghw-settings-modal"))
+            return;
+
+        const settings = loadSettings();
+
+        const overlay = document.createElement("div");
+        overlay.id = "ghw-settings-modal";
+        overlay.style = `
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,.45);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            z-index:999999;
+        `;
+
+        const dialog = document.createElement("div");
+        dialog.style = `
+            width:420px;
+            background:var(--color-canvas-default,#fff);
+            color:var(--color-fg-default,#24292f);
+            border:1px solid var(--color-border-default,#d0d7de);
+            border-radius:8px;
+            box-shadow:0 8px 24px rgba(0,0,0,.25);
+            padding:16px;
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        `;
+
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 16px 0;">GitHub Widgets</h3>
+
+            <label style="display:block;margin:8px 0;">
+                <input id="ghw-downloads" type="checkbox" ${settings.downloads ? "checked" : ""}>
+                Total downloads
+            </label>
+
+            <label style="display:block;margin:8px 0;">
+                <input id="ghw-downloadsWeek" type="checkbox" ${settings.downloadsWeek ? "checked" : ""}>
+                Downloads/week
+            </label>
+
+            <label style="display:block;margin:8px 0;">
+                <input id="ghw-repositoryAge" type="checkbox" ${settings.repositoryAge ? "checked" : ""}>
+                Repository age
+            </label>
+
+            <label style="display:block;margin:8px 0;">
+                <input id="ghw-cacheEnabled" type="checkbox" ${settings.cacheEnabled ? "checked" : ""}>
+                Cache enabled
+            </label>
+
+            <div style="margin-top:20px;text-align:right;">
+                <button id="ghw-cancel" class="btn btn-sm">Cancel</button>
+                <button id="ghw-save" class="btn btn-sm btn-primary">Save</button>
+            </div>
+        `;
+
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener("click", e => {
+            if (e.target === overlay)
+                overlay.remove();
+        });
+
+        dialog.querySelector("#ghw-cancel").onclick = () => {
+            overlay.remove();
+        };
+
+        dialog.querySelector("#ghw-save").onclick = () => {
+
+            saveSettings({
+                downloads: dialog.querySelector("#ghw-downloads").checked,
+                downloadsWeek: dialog.querySelector("#ghw-downloadsWeek").checked,
+                repositoryAge: dialog.querySelector("#ghw-repositoryAge").checked,
+                cacheEnabled: dialog.querySelector("#ghw-cacheEnabled").checked
+            });
+
+            overlay.remove();
+            location.reload();
+        };
     }
 
     const observer = new MutationObserver(load);
@@ -203,5 +318,6 @@
     });
 
     load();
+    GM_registerMenuCommand("⚙ GitHub Widgets Settings", showSettings);
 
 })();
