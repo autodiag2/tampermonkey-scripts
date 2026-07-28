@@ -15,7 +15,23 @@
     'use strict';
 
     const CACHE_TIME = 30 * 60 * 1000;
+    const COMMIT_SVG = `
+        <svg aria-hidden="true" height="16" width="16" viewBox="0 0 16 16" style="margin-right:4px">
+            <path d="M6.5 1.75a.75.75 0 0 1 1.5 0v1.55a4.001 4.001 0 0 1 3.7 3.7h1.55a.75.75 0 0 1 0 1.5H11.7a4.001 4.001 0 0 1-3.7 3.7v1.55a.75.75 0 0 1-1.5 0v-1.55a4.001 4.001 0 0 1-3.7-3.7H1.25a.75.75 0 0 1 0-1.5H2.8a4.001 4.001 0 0 1 3.7-3.7ZM7.25 4.75a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/>
+        </svg>`;
 
+    function githubHeaders() {
+        const headers = {
+            Accept: "application/vnd.github+json"
+        };
+
+        const token = loadSettings().githubToken;
+
+        if (token)
+            headers.Authorization = `Bearer ${token}`;
+
+        return headers;
+    }
     function format(n) {
         if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
         if (n >= 1000) return (n / 1000).toFixed(1) + "k";
@@ -29,8 +45,16 @@
 
     function insertWidget(id, svg, text) {
 
-        if (document.getElementById(id))
+        let existing = document.getElementById(id);
+        if (existing) {
+            existing.innerHTML = `
+                <a class="Link--muted d-inline-flex flex-items-center">
+                    ${svg}
+                    <span>${text}</span>
+                </a>
+            `;
             return;
+        }
 
         const social = document.querySelector('#repository-details-container ul');
         if (!social)
@@ -107,6 +131,8 @@
                 insertCreatedAt(cached.created_at);
             if ( settings.downloadsWeek )
                 insertDownloadsPerWeek(cached.downloads, cached.created_at);
+            if ( settings.averageCommitsPerWeek ) 
+                insertAverageCommitsPerWeek(cached.averageCommitsPerWeek);
             return true;
         }
         return false;
@@ -135,6 +161,21 @@
             `${formatFloat(downloadsPerWeek(downloads, created_at))}/w`
         );
     }
+    function insertAverageCommitsPerWeek(averageCommitsPerWeek_var) {
+        insertWidget(
+            "gh-commits-week",
+            COMMIT_SVG,
+            `${averageCommitsPerWeek_var}/w`
+        );
+    }
+    function averageCommitsPerWeek(all) {
+        if (!all.length)
+            return "-";
+
+        const total = all.reduce((a, b) => a + b, 0);
+
+        return formatFloat(total / all.length);
+    }
     async function load() {
 
         const r = repo();
@@ -150,9 +191,7 @@
                 GM_xmlhttpRequest({
                     method: "GET",
                     url: `https://api.github.com/repos/${r.owner}/${r.repo}/releases`,
-                    headers: {
-                        Accept: "application/vnd.github+json"
-                    },
+                    headers: githubHeaders(),
                     onload: function (res) {
 
                         if (res.status !== 200)
@@ -179,13 +218,32 @@
                     }
                 });
             }
+            if ( settings.averageCommitsPerWeek ) {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `https://api.github.com/repos/${r.owner}/${r.repo}/stats/participation`,
+                    headers: githubHeaders(),
+                    onload(res) {
+
+                        if (res.status !== 200)
+                            return;
+
+                        const stats = JSON.parse(res.responseText);
+
+                        let data = loadState(key);
+                        let avg = averageCommitsPerWeek(stats.all);
+                        data.averageCommitsPerWeek = avg;
+                        data.time = Date.now();
+                        GM_setValue(key, data);
+                        insertAverageCommitsPerWeek(avg)
+                    }
+                });
+            }
             if ( settings.downloadsWeek || settings.repositoryAge ) {
                 GM_xmlhttpRequest({
                     method: "GET",
                     url: `https://api.github.com/repos/${r.owner}/${r.repo}`,
-                    headers: {
-                        Accept: "application/vnd.github+json"
-                    },
+                    headers: githubHeaders(),
                     onload(res) {
 
                         if (res.status !== 200) {
@@ -216,7 +274,9 @@
             downloads: true,
             downloadsWeek: true,
             repositoryAge: true,
-            cacheEnabled: false
+            averageCommitsPerWeek: true,
+            cacheEnabled: false,
+            githubToken: ""
         }, GM_getValue(SETTINGS_KEY, {}));
     }
 
@@ -258,6 +318,25 @@
         dialog.innerHTML = `
             <h3 style="margin:0 0 16px 0;">GitHub Widgets</h3>
 
+            <label style="display:block;margin:16px 0 8px 0;">
+                GitHub Personal Access Token
+            </label>
+
+            <input
+                id="ghw-githubToken"
+                type="password"
+                value="${settings.githubToken}"
+                placeholder="ghp_..."
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:6px 8px;
+                    border:1px solid var(--color-border-default,#d0d7de);
+                    border-radius:6px;
+                    background:var(--color-canvas-default,#fff);
+                    color:inherit;
+                ">
+
             <label style="display:block;margin:8px 0;">
                 <input id="ghw-downloads" type="checkbox" ${settings.downloads ? "checked" : ""}>
                 Total downloads
@@ -266,6 +345,11 @@
             <label style="display:block;margin:8px 0;">
                 <input id="ghw-downloadsWeek" type="checkbox" ${settings.downloadsWeek ? "checked" : ""}>
                 Downloads/week
+            </label>
+
+            <label style="display:block;margin:8px 0;">
+                <input id="ghw-averageCommitsPerWeek" type="checkbox" ${settings.averageCommitsPerWeek ? "checked" : ""}>
+                Commits/week
             </label>
 
             <label style="display:block;margin:8px 0;">
@@ -302,20 +386,15 @@
                 downloads: dialog.querySelector("#ghw-downloads").checked,
                 downloadsWeek: dialog.querySelector("#ghw-downloadsWeek").checked,
                 repositoryAge: dialog.querySelector("#ghw-repositoryAge").checked,
-                cacheEnabled: dialog.querySelector("#ghw-cacheEnabled").checked
+                averageCommitsPerWeek: dialog.querySelector("#ghw-averageCommitsPerWeek").checked,
+                cacheEnabled: dialog.querySelector("#ghw-cacheEnabled").checked,
+                githubToken: dialog.querySelector("#ghw-githubToken").value.trim()
             });
 
             overlay.remove();
             location.reload();
         };
     }
-
-    const observer = new MutationObserver(load);
-
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
 
     load();
     GM_registerMenuCommand("⚙ GitHub Widgets Settings", showSettings);
