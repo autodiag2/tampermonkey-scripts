@@ -56,6 +56,7 @@
 
     function insertWidget(id, svg, text) {
 
+        console.info(`changing ${id}`);
         let existing = document.getElementById(id);
         if (existing) {
             existing.innerHTML = `
