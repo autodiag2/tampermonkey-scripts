@@ -43,6 +43,17 @@
         return m ? { owner: m[1], repo: m[2] } : null;
     }
 
+    function getActionsRoot() {
+        let root = document.querySelector("[data-testid='repo-header-actions']")
+        if ( ! root ) {
+            root = document.querySelector('#repository-details-container ul');
+        }
+        if ( !root ) {
+            console.error("cannot find repo actions root");
+        }
+        return root;
+    }
+
     function insertWidget(id, svg, text) {
 
         let existing = document.getElementById(id);
@@ -56,7 +67,7 @@
             return;
         }
 
-        const social = document.querySelector('#repository-details-container ul');
+        const social = getActionsRoot();
         if (!social)
             return;
 
@@ -178,6 +189,7 @@
     }
     async function load() {
 
+        console.debug("loading wigets");
         const r = repo();
         if (!r)
             return;
@@ -395,6 +407,13 @@
             location.reload();
         };
     }
+
+    const observer = new MutationObserver(load);
+
+    observer.observe(getActionsRoot(), {
+        childList: true,
+        subtree: true
+    });
 
     load();
     GM_registerMenuCommand("⚙ GitHub Widgets Settings", showSettings);
