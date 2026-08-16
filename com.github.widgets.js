@@ -19,7 +19,17 @@
         <svg aria-hidden="true" height="16" width="16" viewBox="0 0 16 16" style="margin-right:4px">
             <path d="M6.5 1.75a.75.75 0 0 1 1.5 0v1.55a4.001 4.001 0 0 1 3.7 3.7h1.55a.75.75 0 0 1 0 1.5H11.7a4.001 4.001 0 0 1-3.7 3.7v1.55a.75.75 0 0 1-1.5 0v-1.55a4.001 4.001 0 0 1-3.7-3.7H1.25a.75.75 0 0 1 0-1.5H2.8a4.001 4.001 0 0 1 3.7-3.7ZM7.25 4.75a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/>
         </svg>`;
-
+    function insertError(reason) {
+        insertWidget(
+            "gh-error",
+            `
+            <svg aria-hidden="true" height="16" width="16" viewBox="0 0 16 16" style="margin-right:4px">
+                <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM7.25 4h1.5v5h-1.5V4Zm0 6h1.5v1.5h-1.5V10Z"/>
+            </svg>
+            `,
+            `Error: ${reason}`
+        );
+    }
     function githubHeaders() {
         const headers = {
             Accept: "application/vnd.github+json"
@@ -206,28 +216,38 @@
                     url: `https://api.github.com/repos/${r.owner}/${r.repo}/releases`,
                     headers: githubHeaders(),
                     onload: function (res) {
-
-                        if (res.status !== 200)
+                        if (res.status !== 200) {
+                            insertError(`releases API: HTTP ${res.status}`);
                             return;
+                        }
 
-                        const releases = JSON.parse(res.responseText);
+                        try {
+                            const releases = JSON.parse(res.responseText);
 
-                        let total = 0;
+                            let total = 0;
 
-                        for (const rel of releases)
-                            for (const asset of rel.assets)
-                                total += asset.download_count;
+                            for (const rel of releases)
+                                for (const asset of rel.assets)
+                                    total += asset.download_count;
 
-                        let data = loadState(key);
-                        data.downloads = total;
-                        data.time = Date.now();
-                        GM_setValue(key, data);
-                        if (settings.downloads)
-                            insertDownloads(total);
-                        if (settings.downloadsWeek)
-                            if (data.created_at)
-                                insertDownloadsPerWeek(total, data.created_at);
+                            let data = loadState(key);
+                            data.downloads = total;
+                            data.time = Date.now();
+                            GM_setValue(key, data);
 
+                            if (settings.downloads)
+                                insertDownloads(total);
+
+                            if (settings.downloadsWeek)
+                                if (data.created_at)
+                                    insertDownloadsPerWeek(total, data.created_at);
+
+                        } catch (e) {
+                            insertError(`releases API: ${e.message}`);
+                        }
+                    },
+                    onerror: function (e) {
+                        insertError("releases API: network error");
                     }
                 });
             }
@@ -237,18 +257,27 @@
                     url: `https://api.github.com/repos/${r.owner}/${r.repo}/stats/participation`,
                     headers: githubHeaders(),
                     onload(res) {
-
-                        if (res.status !== 200)
+                        if (res.status !== 200) {
+                            insertError(`participation API: HTTP ${res.status}`);
                             return;
+                        }
 
-                        const stats = JSON.parse(res.responseText);
+                        try {
+                            const stats = JSON.parse(res.responseText);
 
-                        let data = loadState(key);
-                        let avg = averageCommitsPerWeek(stats.all);
-                        data.averageCommitsPerWeek = avg;
-                        data.time = Date.now();
-                        GM_setValue(key, data);
-                        insertAverageCommitsPerWeek(avg)
+                            let data = loadState(key);
+                            let avg = averageCommitsPerWeek(stats.all);
+                            data.averageCommitsPerWeek = avg;
+                            data.time = Date.now();
+                            GM_setValue(key, data);
+                            insertAverageCommitsPerWeek(avg);
+
+                        } catch (e) {
+                            insertError(`participation API: ${e.message}`);
+                        }
+                    },
+                    onerror() {
+                        insertError("participation API: network error");
                     }
                 });
             }
@@ -258,23 +287,32 @@
                     url: `https://api.github.com/repos/${r.owner}/${r.repo}`,
                     headers: githubHeaders(),
                     onload(res) {
-
                         if (res.status !== 200) {
-                            console.warn("failed to fetch main repo");
+                            insertError(`repository API: HTTP ${res.status}`);
                             return;
                         }
 
-                        const repo = JSON.parse(res.responseText);
+                        try {
+                            const repository = JSON.parse(res.responseText);
 
-                        let data = loadState(key);
-                        data.created_at = repo.created_at;
-                        data.time = Date.now();
-                        GM_setValue(key, data);
-                        if (settings.repositoryAge)
-                            insertCreatedAt(repo.created_at);
-                        if ( settings.downloadsWeek ) 
-                            if (data.downloads != null)
-                                insertDownloadsPerWeek(data.downloads, repo.created_at);
+                            let data = loadState(key);
+                            data.created_at = repository.created_at;
+                            data.time = Date.now();
+                            GM_setValue(key, data);
+
+                            if (settings.repositoryAge)
+                                insertCreatedAt(repository.created_at);
+
+                            if (settings.downloadsWeek)
+                                if (data.downloads != null)
+                                    insertDownloadsPerWeek(data.downloads, repository.created_at);
+
+                        } catch (e) {
+                            insertError(`repository API: ${e.message}`);
+                        }
+                    },
+                    onerror() {
+                        insertError("repository API: network error");
                     }
                 });
             }
@@ -409,14 +447,25 @@
         };
     }
 
-    const observer = new MutationObserver(load);
+    function observeActionsRoot() {
+        const root = getActionsRoot();
 
-    observer.observe(getActionsRoot(), {
-        childList: true,
-        subtree: true
-    });
+        if (!root) {
+            setTimeout(observeActionsRoot, 500);
+            return;
+        }
 
-    load();
+        const observer = new MutationObserver(load);
+
+        observer.observe(root, {
+            childList: true,
+            subtree: true
+        });
+
+        load();
+    }
+
+    observeActionsRoot();
     GM_registerMenuCommand("⚙ GitHub Widgets Settings", showSettings);
 
 })();
