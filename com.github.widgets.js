@@ -74,7 +74,6 @@
     }
 
     function insertWidget(id, svg, text, description) {
-
         console.info(`changing ${id}`);
 
         const loading = document.getElementById("gh-loading");
@@ -82,8 +81,9 @@
             loading.remove();
 
         let existing = document.getElementById(id);
+
         if (existing) {
-            existing.title = description;
+            console.info(`existing ${id}`);
             existing.innerHTML = `
                 <a class="Link--muted d-inline-flex flex-items-center">
                     ${svg}
@@ -102,6 +102,8 @@
         li.className = "btn-sm btn BtnGroup-item";
         li.style.display = "flex";
         li.title = description;
+        li.dataset.svg = svg;
+        li.dataset.text = text;
 
         li.innerHTML = `
             <a class="Link--muted d-inline-flex flex-items-center">
@@ -489,7 +491,41 @@
 
         insertLoading();
 
-        const observer = new MutationObserver(load);
+        const observer = new MutationObserver(mutations => {
+            const settings = loadSettings();
+
+            const widgets = ["gh-loading", "gh-error"];
+
+            if (settings.downloads)
+                widgets.push("gh-download-counter");
+
+            if (settings.downloadsWeek)
+                widgets.push("gh-download-week-counter");
+
+            if (settings.averageCommitsPerWeek)
+                widgets.push("gh-commits-week");
+
+            if (settings.repositoryAge)
+                widgets.push("gh-age-counter");
+
+            for (const mutation of mutations) {
+                for (const node of mutation.removedNodes) {
+                    if (node.nodeType !== Node.ELEMENT_NODE)
+                        continue;
+
+                    if (widgets.includes(node.id)) {
+                        load();
+                        return;
+                    }
+
+                    if (node.querySelector &&
+                        widgets.some(id => node.querySelector(`#${id}`))) {
+                        load();
+                        return;
+                    }
+                }
+            }
+        });
 
         observer.observe(root, {
             childList: true,
@@ -499,7 +535,10 @@
         load();
     }
 
-    observeActionsRoot();
+    if (document.readyState === "complete")
+        setTimeout(observeActionsRoot, 500);
+    else
+        window.addEventListener("load", () => setTimeout(observeActionsRoot, 500), { once: true });
     GM_registerMenuCommand("⚙ GitHub Widgets Settings", showSettings);
 
 })();
