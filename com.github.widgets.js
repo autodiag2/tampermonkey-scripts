@@ -30,6 +30,13 @@
             `Error: ${reason}`
         );
     }
+    function insertLoading() {
+        insertWidget(
+            "gh-loading",
+            "",
+            "loading ..."
+        );
+    }
     function githubHeaders() {
         const headers = {
             Accept: "application/vnd.github+json"
@@ -67,6 +74,7 @@
     function insertWidget(id, svg, text) {
 
         console.info(`changing ${id}`);
+
         let existing = document.getElementById(id);
         if (existing) {
             existing.innerHTML = `
@@ -88,10 +96,10 @@
         li.style.display = "flex";
 
         li.innerHTML = `
-        <a class="Link--muted d-inline-flex flex-items-center">
-            ${svg}
-            <span>${text}</span>
-        </a>`;
+            <a class="Link--muted d-inline-flex flex-items-center">
+                ${svg}
+                <span>${text}</span>
+            </a>`;
 
         social.appendChild(li);
     }
@@ -155,6 +163,7 @@
                 insertDownloadsPerWeek(cached.downloads, cached.created_at);
             if ( settings.averageCommitsPerWeek ) 
                 insertAverageCommitsPerWeek(cached.averageCommitsPerWeek);
+            removeLoading();
             return true;
         }
         return false;
@@ -171,6 +180,11 @@
         const created = new Date(createdAt);
         const weeks = Math.max(1, (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24 * 7));
         return downloads / weeks;
+    }
+    function removeLoading() {
+        const loading = document.getElementById("gh-loading");
+        if (loading && id !== "gh-loading")
+            loading.remove();
     }
     function insertDownloadsPerWeek(downloads, created_at) {
         insertWidget(
@@ -245,9 +259,11 @@
                         } catch (e) {
                             insertError(`releases API: ${e.message}`);
                         }
+                        removeLoading();
                     },
                     onerror: function (e) {
                         insertError("releases API: network error");
+                        removeLoading();
                     }
                 });
             }
@@ -275,9 +291,11 @@
                         } catch (e) {
                             insertError(`participation API: ${e.message}`);
                         }
+                        removeLoading();
                     },
                     onerror() {
                         insertError("participation API: network error");
+                        removeLoading();
                     }
                 });
             }
@@ -310,9 +328,11 @@
                         } catch (e) {
                             insertError(`repository API: ${e.message}`);
                         }
+                        removeLoading();
                     },
                     onerror() {
                         insertError("repository API: network error");
+                        removeLoading();
                     }
                 });
             }
@@ -454,6 +474,8 @@
             setTimeout(observeActionsRoot, 500);
             return;
         }
+
+        insertLoading();
 
         const observer = new MutationObserver(load);
 
