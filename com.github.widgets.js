@@ -361,7 +361,8 @@
             repositoryAge: true,
             averageCommitsPerWeek: true,
             cacheEnabled: false,
-            githubToken: ""
+            githubToken: "",
+            startupDelay: 1000
         }, GM_getValue(SETTINGS_KEY, {}));
     }
 
@@ -451,6 +452,25 @@
                 <button id="ghw-cancel" class="btn btn-sm">Cancel</button>
                 <button id="ghw-save" class="btn btn-sm btn-primary">Save</button>
             </div>
+
+            <label style="display:block;margin:16px 0 8px 0;">
+                Startup delay (ms)
+            </label>
+
+            <input
+                id="ghw-startupDelay"
+                type="number"
+                min="0"
+                value="${settings.startupDelay}"
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:6px 8px;
+                    border:1px solid var(--color-border-default,#d0d7de);
+                    border-radius:6px;
+                    background:var(--color-canvas-default,#fff);
+                    color:inherit;
+                ">
         `;
 
         overlay.appendChild(dialog);
@@ -473,7 +493,11 @@
                 repositoryAge: dialog.querySelector("#ghw-repositoryAge").checked,
                 averageCommitsPerWeek: dialog.querySelector("#ghw-averageCommitsPerWeek").checked,
                 cacheEnabled: dialog.querySelector("#ghw-cacheEnabled").checked,
-                githubToken: dialog.querySelector("#ghw-githubToken").value.trim()
+                githubToken: dialog.querySelector("#ghw-githubToken").value.trim(),
+                startupDelay: Math.max(
+                    0,
+                    Number(dialog.querySelector("#ghw-startupDelay").value) || 1000
+                )
             });
 
             overlay.remove();
@@ -535,10 +559,11 @@
         load();
     }
 
+    const settings = loadSettings();
     if (document.readyState === "complete")
-        setTimeout(observeActionsRoot, 500);
+        setTimeout(observeActionsRoot, settings.startupDelay);
     else
-        window.addEventListener("load", () => setTimeout(observeActionsRoot, 500), { once: true });
+        window.addEventListener("load", () => setTimeout(observeActionsRoot, settings.startupDelay), { once: true });
     GM_registerMenuCommand("⚙ GitHub Widgets Settings", showSettings);
 
 })();
