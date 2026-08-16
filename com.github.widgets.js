@@ -27,14 +27,16 @@
                 <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM7.25 4h1.5v5h-1.5V4Zm0 6h1.5v1.5h-1.5V10Z"/>
             </svg>
             `,
-            `Error: ${reason}`
+            `Error: ${reason}`,
+            "GitHub Widgets could not load this widget"
         );
     }
     function insertLoading() {
         insertWidget(
             "gh-loading",
             "",
-            "loading ..."
+            "loading ...",
+            "GitHub Widgets are loading"
         );
     }
     function githubHeaders() {
@@ -71,12 +73,17 @@
         return root;
     }
 
-    function insertWidget(id, svg, text) {
+    function insertWidget(id, svg, text, description) {
 
         console.info(`changing ${id}`);
 
+        const loading = document.getElementById("gh-loading");
+        if (loading && id !== "gh-loading")
+            loading.remove();
+
         let existing = document.getElementById(id);
         if (existing) {
+            existing.title = description;
             existing.innerHTML = `
                 <a class="Link--muted d-inline-flex flex-items-center">
                     ${svg}
@@ -94,6 +101,7 @@
         li.id = id;
         li.className = "btn-sm btn BtnGroup-item";
         li.style.display = "flex";
+        li.title = description;
 
         li.innerHTML = `
             <a class="Link--muted d-inline-flex flex-items-center">
@@ -130,7 +138,8 @@
                           <path d="M8 1a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V1.75A.75.75 0 0 1 8 1Z"/>
                      </svg>
                     `,
-            format(total)
+            format(total),
+            "Total number of downloads of all release assets"
         );
     }
     function insertCreatedAt(created_at) {
@@ -141,7 +150,8 @@
                         <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm.75 4v4.19l2.53 1.46-.75 1.3L7.25 9V4h1.5Z"/>
                     </svg>
                     `,
-                    formatAge(created_at)
+                    formatAge(created_at),
+                    "Time elapsed since the repository was created"
                 );
     }
     function insertAllFromCache() {
@@ -194,14 +204,16 @@
                 <path d="M2.75 0A.75.75 0 0 1 3.5.75V2h9V.75a.75.75 0 0 1 1.5 0V2h.25A1.75 1.75 0 0 1 16 3.75v10.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25V3.75A1.75 1.75 0 0 1 1.75 2H2V.75A.75.75 0 0 1 2.75 0ZM1.5 6v8.25c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V6Z"/>
             </svg>
             `,
-            `${formatFloat(downloadsPerWeek(downloads, created_at))}/w`
+            `${formatFloat(downloadsPerWeek(downloads, created_at))}/w`,
+            "Average number of release asset downloads per week since the repository was created"
         );
     }
     function insertAverageCommitsPerWeek(averageCommitsPerWeek_var) {
         insertWidget(
             "gh-commits-week",
             COMMIT_SVG,
-            `${averageCommitsPerWeek_var}/w`
+            `${averageCommitsPerWeek_var}/w`,
+            "Average number of commits per week based on GitHub participation statistics"
         );
     }
     function averageCommitsPerWeek(all) {
